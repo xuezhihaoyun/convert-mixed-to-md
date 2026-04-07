@@ -2,6 +2,12 @@
 
 批量把 `.doc`、`.docx`、`.epub`、`.pdf`、`.wps`、`.wpt`、`.hwp` 转成 Markdown。
 
+> **必看：扫描版 PDF 需要 `MINERU_TOKEN`**
+>
+> - 普通 PDF（有文字层）通常不需要 token。  
+> - 扫描版 / 纯图片 PDF 没有 `MINERU_TOKEN` 时，转换很可能失败。  
+> - 这不是脚本 bug，是 OCR 服务需要鉴权。
+
 ## 支持格式
 
 - `.doc`
@@ -22,6 +28,12 @@
 - `.hwp` 自动调用 `hwp5txt`（若缺失会首次自动安装 `pyhwp`）
 - 扫描版 `pdf` 可选使用 MinerU OCR
 - 大扫描版 `pdf` 会自动分段 OCR 再合并
+
+## 重要提醒（MinerU token）
+
+- 普通 PDF（有文字层）通常不需要 token。
+- 扫描版 / 纯图片 PDF 基本需要 OCR，建议配置 `MINERU_TOKEN`。
+- 未配置 token 时，这类 PDF 可能直接失败（这是预期行为，不是脚本损坏）。
 
 ## 安装
 
