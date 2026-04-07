@@ -1,47 +1,70 @@
 # convert_mixed_to_md
 
-批量把 `.doc`、`.docx`、`.epub`、`.pdf`、`.wps`、`.wpt`、`.hwp` 转成 Markdown。
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-222222)](#)
+[![Formats](https://img.shields.io/badge/Formats-doc%20docx%20epub%20pdf%20wps%20wpt%20hwp-0A7CFF)](#支持格式)
+[![Alias](https://img.shields.io/badge/Shortcut-mix2md-1F8B4C)](#使用方式)
+
+批量把 `.doc`、`.docx`、`.epub`、`.pdf`、`.wps`、`.wpt`、`.hwp` 转成 Markdown，默认自动跳过已转换文件，适合持续整理资料库。
 
 > **必看：扫描版 PDF 需要 `MINERU_TOKEN`**
 >
 > - 普通 PDF（有文字层）通常不需要 token。  
 > - 扫描版 / 纯图片 PDF 没有 `MINERU_TOKEN` 时，转换很可能失败。  
-> - 这不是脚本 bug，是 OCR 服务需要鉴权。
+> - 这不是脚本 bug，而是 OCR 服务鉴权要求。
+
+## 快速开始
+
+1. 安装 Python 3.9+。  
+2. 安装系统命令：`pandoc` + `pdftotext`。  
+3. 直接运行一键脚本。
+
+| 场景 | 启动方式 |
+|---|---|
+| macOS | 双击 `run.command` 或拖文件/目录到 `run.command` |
+| Windows | 双击 `run_windows.bat` 或拖文件/目录到 `run_windows.bat` |
+
+你也可以用短名入口：
+
+- `mix2md.command`（macOS）
+- `mix2md.bat`（Windows）
+- `mix2md.py`（命令行）
+
+## 工作流
+
+```mermaid
+flowchart TD
+    A["输入文件或目录"] --> B["识别文件类型"]
+    B --> C["doc/docx/wps/wpt/hwp"]
+    B --> D["pdf"]
+    B --> E["epub"]
+    C --> F["文本提取并转 Markdown"]
+    E --> F
+    D --> G["先走文字层提取"]
+    G -->|有文字| F
+    G -->|无文字| H["MinerU OCR（需 token）"]
+    H --> F
+    F --> I["写回 .md（已存在则跳过）"]
+```
 
 ## 支持格式
 
-- `.doc`
-- `.docx`
-- `.epub`
-- `.pdf`
-- `.wps`
-- `.wpt`
-- `.hwp`
-
-## 功能
-
-- 自动识别文件类型
-- 默认写回原目录
-- 已有同名 `.md` 自动跳过
-- 旧版 `.doc` 自动尝试两种解析方式
-- 旧版 `.wps/.wpt` 按旧式文档方式尝试解析
-- `.hwp` 自动调用 `hwp5txt`（若缺失会首次自动安装 `pyhwp`）
-- 扫描版 `pdf` 可选使用 MinerU OCR
-- 大扫描版 `pdf` 会自动分段 OCR 再合并
-
-## 重要提醒（MinerU token）
-
-- 普通 PDF（有文字层）通常不需要 token。
-- 扫描版 / 纯图片 PDF 基本需要 OCR，建议配置 `MINERU_TOKEN`。
-- 未配置 token 时，这类 PDF 可能直接失败（这是预期行为，不是脚本损坏）。
+| 格式 | 处理方式 | 备注 |
+|---|---|---|
+| `.doc` | 旧版解析 + 兜底提取 | 建议尽量转 `.docx` 更稳 |
+| `.docx` | `pandoc` | 稳定 |
+| `.epub` | `pandoc` | 可能生成 `_assets` 资源目录 |
+| `.pdf` | 文字层提取 + OCR 兜底 | 扫描版建议配置 `MINERU_TOKEN` |
+| `.wps/.wpt` | 旧版文档解析 | 成功率受原始文件影响 |
+| `.hwp` | `hwp5txt`（自动安装 `pyhwp`） | 首次可能稍慢 |
 
 ## 安装
 
-### 1. 安装 Python
+### 1. Python
 
 需要 Python 3.9+。
 
-### 2. 安装系统命令
+### 2. 系统命令
 
 macOS:
 
@@ -49,7 +72,7 @@ macOS:
 brew install pandoc poppler
 ```
 
-Windows（推荐任选一种）:
+Windows（任选一种）:
 
 PowerShell + winget:
 
@@ -58,91 +81,62 @@ winget install --id JohnMacFarlane.Pandoc -e
 winget install --id oschwartz10612.Poppler -e
 ```
 
-或 Chocolatey:
+Chocolatey:
 
 ```powershell
 choco install pandoc poppler -y
 ```
 
-安装后请确认命令可用：
+安装后请确认：
 
 - `pandoc`
 - `pdftotext`
 
-### 3. Python 依赖（已自动化）
+说明：`pandoc` 和 `pdftotext` 是第三方工具官方命令名，不能改名。  
+我们已在项目内提供了可自定义短名入口 `mix2md`（见上）。
 
-`run.command` 首次运行会自动创建本地 `.venv` 并安装 `requirements.txt` 依赖。  
-一般不需要手动执行 `pip install`。
+### 3. Python 依赖（自动）
 
-## 用法
+脚本首次运行会自动创建本地 `.venv` 并安装 `requirements.txt`。  
+通常不需要手动 `pip install`。
 
-### 最简单
+## 使用方式
 
-直接把文件或文件夹拖到 `run.command` 上（推荐）。
+### 一键方式（推荐）
 
-也可以双击 `run.command`，然后手动输入路径。
+- macOS：`run.command`
+- Windows：`run_windows.bat`
 
-支持格式：`doc / docx / pdf / epub / wps / wpt / hwp`
+Windows 版支持：
 
-### Windows 一键版
+- 双击运行
+- 拖拽文件/目录
+- 连续输入多路径
+- 粘贴多路径（如 `"C:\a.docx" "D:\b.pdf"` 或 `C:\a.docxC:\b.pdf`）
 
-Windows 用户请使用 `run_windows.bat`。
-
-- 可双击运行
-- 可拖拽文件/文件夹到 `.bat`
-- 首次自动创建 `.venv` 并安装依赖
-- 支持连续输入路径批量处理
-- 支持粘贴多路径输入（含 `"C:\\a.docx" "D:\\b.pdf"` 和连写 `C:\a.docxC:\b.pdf`）
-
-如果是旧版 `.doc/.wps/.wpt`，Windows 下建议先转为 `.docx` 再转换（成功率更高）。
-
-### 命令行
-
-#### 转单个文件
+### 命令行方式
 
 macOS / Linux:
 
 ```bash
-python3 convert_mixed_to_md.py '/path/to/file.epub'
-```
-
-Windows:
-
-```powershell
-python .\convert_mixed_to_md.py "C:\path\to\file.epub"
-```
-
-### 转整个目录
-
-macOS / Linux:
-
-```bash
+python3 mix2md.py '/path/to/folder'
 python3 convert_mixed_to_md.py '/path/to/folder'
-```
-
-Windows:
-
-```powershell
-python .\convert_mixed_to_md.py "C:\path\to\folder"
-```
-
-### 输出到另一个目录
-
-macOS / Linux:
-
-```bash
+python3 convert_mixed_to_md.py '/path/to/file.epub'
 python3 convert_mixed_to_md.py '/path/to/folder' -o '/path/to/output'
 ```
 
 Windows:
 
 ```powershell
+python .\mix2md.py "C:\path\to\folder"
+python .\convert_mixed_to_md.py "C:\path\to\folder"
+python .\convert_mixed_to_md.py "C:\path\to\file.epub"
 python .\convert_mixed_to_md.py "C:\path\to\folder" -o "C:\path\to\output"
 ```
 
-## 扫描版 PDF
+## 扫描版 PDF 与 MinerU
 
-如果 PDF 是扫描版或纯图片版，建议配置 MinerU token：
+配置 `MINERU_TOKEN` 后，扫描版 PDF 可以自动走 OCR。
 
 macOS / Linux:
 
@@ -165,18 +159,13 @@ set MINERU_TOKEN=your_token
 python .\convert_mixed_to_md.py "C:\path\to\folder"
 ```
 
-如果没有配置 token，普通有文字层的 PDF 仍然可以转换。
+## 常见问题
 
-大扫描版 PDF 会自动分段 OCR，并显示类似下面的进度：
+**Q1: 为什么有些 PDF 转换失败？**  
+大概率是扫描版且未配置 `MINERU_TOKEN`，或 OCR 服务暂时不可用。
 
-```text
-[INFO] 大 PDF 触发分段 OCR: ... (242 页, 10 段)
-[INFO] OCR 第 1/10 段: ...
-```
+**Q2: 为什么 Windows 下旧 `.doc/.wps/.wpt` 成功率不稳定？**  
+这类旧格式本身结构复杂，建议优先转 `.docx` 后再转 Markdown。
 
-## 说明
-
-- 同目录下如果同时有 `a.pdf` 和 `a.epub`，输出会分别命名为：
-  - `a.pdf.md`
-  - `a.epub.md`
-- `epub` 转换时如果有图片，通常会生成一个 `_assets` 目录。
+**Q3: 为什么有的文件被 `[SKIP]`？**  
+同名 `.md` 已存在，脚本默认跳过以避免重复覆盖。
