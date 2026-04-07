@@ -25,7 +25,11 @@
 
 ## 安装
 
-### 1. 安装系统命令
+### 1. 安装 Python
+
+需要 Python 3.9+。
+
+### 2. 安装系统命令
 
 macOS:
 
@@ -33,7 +37,27 @@ macOS:
 brew install pandoc poppler
 ```
 
-### 2. Python 依赖（已自动化）
+Windows（推荐任选一种）:
+
+PowerShell + winget:
+
+```powershell
+winget install --id JohnMacFarlane.Pandoc -e
+winget install --id oschwartz10612.Poppler -e
+```
+
+或 Chocolatey:
+
+```powershell
+choco install pandoc poppler -y
+```
+
+安装后请确认命令可用：
+
+- `pandoc`
+- `pdftotext`
+
+### 3. Python 依赖（已自动化）
 
 `run.command` 首次运行会自动创建本地 `.venv` 并安装 `requirements.txt` 依赖。  
 一般不需要手动执行 `pip install`。
@@ -64,29 +88,69 @@ Windows 用户请使用 `run_windows.bat`。
 
 #### 转单个文件
 
+macOS / Linux:
+
 ```bash
 python3 convert_mixed_to_md.py '/path/to/file.epub'
 ```
 
+Windows:
+
+```powershell
+python .\convert_mixed_to_md.py "C:\path\to\file.epub"
+```
+
 ### 转整个目录
+
+macOS / Linux:
 
 ```bash
 python3 convert_mixed_to_md.py '/path/to/folder'
 ```
 
+Windows:
+
+```powershell
+python .\convert_mixed_to_md.py "C:\path\to\folder"
+```
+
 ### 输出到另一个目录
+
+macOS / Linux:
 
 ```bash
 python3 convert_mixed_to_md.py '/path/to/folder' -o '/path/to/output'
+```
+
+Windows:
+
+```powershell
+python .\convert_mixed_to_md.py "C:\path\to\folder" -o "C:\path\to\output"
 ```
 
 ## 扫描版 PDF
 
 如果 PDF 是扫描版或纯图片版，建议配置 MinerU token：
 
+macOS / Linux:
+
 ```bash
 export MINERU_TOKEN='your_token'
 python3 convert_mixed_to_md.py '/path/to/folder'
+```
+
+Windows PowerShell:
+
+```powershell
+$env:MINERU_TOKEN='your_token'
+python .\convert_mixed_to_md.py "C:\path\to\folder"
+```
+
+Windows CMD:
+
+```bat
+set MINERU_TOKEN=your_token
+python .\convert_mixed_to_md.py "C:\path\to\folder"
 ```
 
 如果没有配置 token，普通有文字层的 PDF 仍然可以转换。
