@@ -12,10 +12,9 @@ import sys
 import tempfile
 import time
 import zipfile
+from functools import lru_cache
 from pathlib import Path
 from xml.etree import ElementTree as ET
-
-import requests
 
 
 SUPPORTED_EXTENSIONS = {".doc", ".docx", ".epub", ".pdf", ".wps", ".wpt", ".hwp"}
@@ -29,6 +28,48 @@ OCR_CHUNK_PAGE_THRESHOLD = 40
 OCR_CHUNK_SIZE = 25
 DIRECT_OCR_FILESIZE_THRESHOLD = 50 * 1024 * 1024
 DIRECT_OCR_PAGE_THRESHOLD = 120
+
+
+@lru_cache(maxsize=None)
+def which_cached(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def get_requests_module():
+    try:
+        import requests  # type: ignore
+
+        return requests
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "未安装 requests，无法调用 MinerU OCR。可执行: python -m pip install requests"
+        ) from exc
+
+
+def can_import_requests() -> bool:
+    try:
+        import requests  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def print_environment_check() -> None:
+    lines = [
+        ("python", sys.executable),
+        ("pandoc", which_cached("pandoc") or "MISSING"),
+        ("pdftotext", which_cached("pdftotext") or "MISSING"),
+        ("textutil", which_cached("textutil") or "MISSING"),
+        ("antiword", which_cached("antiword") or "MISSING"),
+        ("catdoc", which_cached("catdoc") or "MISSING"),
+        ("hwp5txt", which_cached("hwp5txt") or "MISSING"),
+        ("requests", "OK" if can_import_requests() else "MISSING"),
+        ("MINERU_TOKEN", "SET" if bool(os.environ.get("MINERU_TOKEN", DEFAULT_MINERU_TOKEN)) else "EMPTY"),
+    ]
+    print("Environment check:")
+    for key, value in lines:
+        print(f"- {key}: {value}")
 
 
 def normalize_markdown(markdown: str, title: str | None = None) -> str:
@@ -256,7 +297,7 @@ def convert_legacy_word_to_md(source_path: Path, output_path: Path) -> None:
     except Exception as exc:  # noqa: BLE001
         fallback_errors.append(f"html 提取失败: {exc}")
 
-    textutil = shutil.which("textutil")
+    textutil = which_cached("textutil")
     if textutil:
         try:
             result = subprocess.run(
@@ -272,7 +313,7 @@ def convert_legacy_word_to_md(source_path: Path, output_path: Path) -> None:
         except Exception as exc:  # noqa: BLE001
             fallback_errors.append(f"textutil 提取失败: {exc}")
 
-    antiword = shutil.which("antiword")
+    antiword = which_cached("antiword")
     if antiword:
         try:
             result = subprocess.run(
@@ -288,7 +329,7 @@ def convert_legacy_word_to_md(source_path: Path, output_path: Path) -> None:
         except Exception as exc:  # noqa: BLE001
             fallback_errors.append(f"antiword 提取失败: {exc}")
 
-    catdoc = shutil.which("catdoc")
+    catdoc = which_cached("catdoc")
     if catdoc:
         try:
             result = subprocess.run(
@@ -314,7 +355,7 @@ def convert_legacy_word_to_md(source_path: Path, output_path: Path) -> None:
     hints: list[str] = []
     if os.name == "nt":
         hints.append("Windows 上建议先将 .doc/.wps/.wpt 转为 .docx 再转换")
-    if not shutil.which("pandoc"):
+    if not which_cached("pandoc"):
         hints.append("未安装 pandoc")
     if not textutil and not antiword and not catdoc:
         hints.append("未找到可用的旧版文档提取工具（textutil/antiword/catdoc）")
@@ -330,7 +371,7 @@ def convert_docx_or_epub_to_md(source_path: Path, output_path: Path) -> None:
 
 
 def get_hwp5txt_runner() -> list[str] | None:
-    hwp5txt = shutil.which("hwp5txt")
+    hwp5txt = which_cached("hwp5txt")
     if hwp5txt:
         return [hwp5txt]
 
@@ -385,7 +426,7 @@ def convert_hwp_to_md(source_path: Path, output_path: Path) -> None:
 
 
 def extract_pdf_text_with_pdftotext(pdf_path: Path) -> str:
-    pdftotext = shutil.which("pdftotext")
+    pdftotext = which_cached("pdftotext")
     if not pdftotext:
         return ""
 
@@ -451,6 +492,7 @@ def extract_markdown_from_zip(zip_path: Path) -> str:
 
 
 def extract_markdown_with_mineru(source_path: Path) -> str:
+    requests = get_requests_module()
     token = os.environ.get("MINERU_TOKEN", DEFAULT_MINERU_TOKEN)
     if not token:
         raise ValueError("未配置 MinerU token")
@@ -684,9 +726,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="批量将 .doc / .docx / .epub / .pdf / .wps / .wpt / .hwp 转为 Markdown，并跳过已存在的同名 .md。"
     )
-    parser.add_argument("input", help="单个文件或目录")
+    parser.add_argument("input", nargs="?", help="单个文件或目录")
     parser.add_argument("-o", "--output-dir", help="输出目录，默认写回输入文件所在目录")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="仅检查运行环境与关键依赖，不执行转换",
+    )
     args = parser.parse_args()
+
+    if args.check:
+        print_environment_check()
+        return 0
+
+    if not args.input:
+        parser.error("缺少 input 参数（单个文件或目录），或使用 --check 仅做环境检查")
 
     input_path = Path(args.input).expanduser().resolve()
     base_output_dir = resolve_base_output_dir(input_path, args.output_dir)
@@ -697,11 +751,11 @@ def main() -> int:
         return 1
 
     suffixes = {path.suffix.lower() for path in files}
-    if suffixes.intersection({".doc", ".docx", ".epub", ".wps", ".wpt"}) and not shutil.which("pandoc"):
+    if suffixes.intersection({".doc", ".docx", ".epub", ".wps", ".wpt"}) and not which_cached("pandoc"):
         print("[WARN] 未检测到 pandoc，doc/docx/epub/wps/wpt 可能转换失败。", file=sys.stderr)
-    if ".pdf" in suffixes and not shutil.which("pdftotext"):
+    if ".pdf" in suffixes and not which_cached("pdftotext"):
         print("[INFO] 未检测到 pdftotext，将使用 Python 提取器处理 PDF。", file=sys.stderr)
-    if os.name == "nt" and suffixes.intersection({".doc", ".wps", ".wpt"}) and not shutil.which("textutil"):
+    if os.name == "nt" and suffixes.intersection({".doc", ".wps", ".wpt"}) and not which_cached("textutil"):
         print("[INFO] Windows 不支持 textutil；旧版文档建议先转为 .docx。", file=sys.stderr)
     if ".hwp" in suffixes and not get_hwp5txt_runner():
         print("[INFO] 检测到 .hwp：首次转换会自动安装 pyhwp，耗时会稍长。", file=sys.stderr)

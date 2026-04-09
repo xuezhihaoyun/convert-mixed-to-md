@@ -24,6 +24,12 @@
 | macOS | 双击 `run.command` 或拖文件/目录到 `run.command` |
 | Windows | 双击 `run_windows.bat` 或拖文件/目录到 `run_windows.bat` |
 
+运行前可先做环境体检：
+
+```bash
+python3 convert_mixed_to_md.py --check
+```
+
 你也可以用短名入口：
 
 - `mix2md.command`（macOS）
@@ -99,6 +105,8 @@ choco install pandoc poppler -y
 
 脚本首次运行会自动创建本地 `.venv` 并安装 `requirements.txt`。  
 通常不需要手动 `pip install`。
+
+说明：`requests` 仅在 MinerU OCR 路径下需要，普通文本层转换可不依赖它。
 
 ## 使用方式
 
