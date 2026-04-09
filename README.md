@@ -1,9 +1,13 @@
-# convert_mixed_to_md
+# 文档一键转MD
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-222222)](#)
 [![Formats](https://img.shields.io/badge/Formats-doc%20docx%20epub%20pdf%20wps%20wpt%20hwp-0A7CFF)](#支持格式)
 [![Alias](https://img.shields.io/badge/Shortcut-mix2md-1F8B4C)](#使用方式)
+
+> 项目代号：`convert_mixed_to_md`
+>
+> 对外名称：**文档一键转MD**
 
 批量把 `.doc`、`.docx`、`.epub`、`.pdf`、`.wps`、`.wpt`、`.hwp` 转成 Markdown，默认自动跳过已转换文件，适合持续整理资料库。
 
