@@ -22,6 +22,14 @@ HTML_START = b"<html><body>"
 HTML_END = b"</html>"
 HTML_ANY_START = b"<html"
 CHARSET_RE = re.compile(r"charset\s*=\s*['\"]?([A-Za-z0-9._-]+)", re.IGNORECASE)
+SPAN_ID_LINE_RE = re.compile(r"(?im)^[ \t]*<span\b[^>]*\bid=['\"][^'\"]+['\"][^>]*>\s*</span>\s*$")
+SPAN_ID_INLINE_RE = re.compile(r"(?is)<span\b[^>]*\bid=['\"][^'\"]+['\"][^>]*>\s*</span>")
+DIV_ONLY_LINE_RE = re.compile(r"(?im)^[ \t]*</?div\b[^>]*>\s*$")
+SVG_BLOCK_RE = re.compile(r"(?is)<svg\b[^>]*>.*?</svg>")
+ANCHOR_TAG_RE = re.compile(r"(?is)<a\s+[^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>")
+IMG_TAG_RE = re.compile(r"(?is)<img\s+[^>]*src=['\"]([^'\"]+)['\"][^>]*>")
+ALT_ATTR_RE = re.compile(r"(?i)\balt=['\"]([^'\"]*)['\"]")
+STRIP_TAG_RE = re.compile(r"(?is)<[^>]+>")
 MINERU_API_BASE = "https://mineru.net/api/v4"
 DEFAULT_MINERU_TOKEN = ""
 OCR_CHUNK_PAGE_THRESHOLD = 40
@@ -81,6 +89,66 @@ def normalize_markdown(markdown: str, title: str | None = None) -> str:
     if title and not first_nonempty.startswith("#"):
         markdown = f"# {title}\n\n{markdown}"
     return markdown.rstrip() + "\n"
+
+
+def html_to_plain_text(fragment: str) -> str:
+    text = STRIP_TAG_RE.sub("", fragment)
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def convert_inline_html_tags_to_markdown(text: str) -> str:
+    def replace_anchor(match: re.Match[str]) -> str:
+        href = html.unescape(match.group(1).strip())
+        label = html_to_plain_text(match.group(2)) or href
+        return f"[{label}]({href})"
+
+    def replace_image(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        src = html.unescape(match.group(1).strip())
+        alt_match = ALT_ATTR_RE.search(tag)
+        alt = html.unescape(alt_match.group(1)).strip() if alt_match else ""
+        return f"![{alt}]({src})"
+
+    text = ANCHOR_TAG_RE.sub(replace_anchor, text)
+    text = IMG_TAG_RE.sub(replace_image, text)
+    return text
+
+
+def relativize_asset_paths(text: str, output_path: Path) -> str:
+    assets_dir = output_path.parent / f"{output_path.stem}_assets"
+    assets_dir_str = str(assets_dir.resolve())
+    text = text.replace(assets_dir_str + os.sep, f"{assets_dir.name}/")
+    text = text.replace(assets_dir_str, assets_dir.name)
+    return text
+
+
+def clean_epub_markdown(markdown: str, output_path: Path) -> str:
+    text = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    text = SVG_BLOCK_RE.sub("", text)
+    text = SPAN_ID_LINE_RE.sub("", text)
+    text = SPAN_ID_INLINE_RE.sub("", text)
+    text = DIV_ONLY_LINE_RE.sub("", text)
+    text = convert_inline_html_tags_to_markdown(text)
+    text = relativize_asset_paths(text, output_path)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def clean_docx_markdown(markdown: str, output_path: Path) -> str:
+    text = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    text = convert_inline_html_tags_to_markdown(text)
+    text = relativize_asset_paths(text, output_path)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def postprocess_markdown(markdown: str, source_suffix: str, output_path: Path) -> str:
+    if source_suffix == ".epub":
+        return clean_epub_markdown(markdown, output_path)
+    if source_suffix == ".docx":
+        return clean_docx_markdown(markdown, output_path)
+    return markdown
 
 
 def polish_mineru_markdown(markdown: str, title: str) -> str:
@@ -718,6 +786,13 @@ def convert_file(source_path: Path, output_dir: Path) -> list[Path]:
         raise ValueError(f"暂不支持的格式: {suffix}")
 
     markdown = output_path.read_text(encoding="utf-8")
+    try:
+        markdown = postprocess_markdown(markdown, suffix, output_path)
+    except Exception as exc:  # noqa: BLE001
+        print(
+            f"[WARN] 后处理失败，已回退原始 Markdown: {source_path} ({exc})",
+            file=sys.stderr,
+        )
     output_path.write_text(normalize_markdown(markdown, title=source_path.stem), encoding="utf-8")
     return [output_path]
 
