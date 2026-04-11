@@ -12,8 +12,40 @@ normalize_path() {
   value="${value#\"}"
   value="${value%\'}"
   value="${value#\'}"
-  value="${value//\\ / }"
+  value="${(Q)value}"
   printf '%s' "$value"
+}
+
+parse_input_paths() {
+  local raw="$1"
+  local normalized
+  local -a words
+
+  normalized="$(normalize_path "$raw")"
+  if [ -z "$normalized" ]; then
+    return 0
+  fi
+
+  # If the whole input already points to an existing path, keep it intact.
+  if [ -e "$normalized" ]; then
+    printf '%s\n' "$normalized"
+    return 0
+  fi
+
+  # Otherwise parse as shell-style words, so multiple drag-in paths can be handled.
+  words=("${(z)normalized}")
+  if [ "${#words[@]}" -eq 0 ]; then
+    printf '%s\n' "$normalized"
+    return 0
+  fi
+
+  local item
+  for item in "${words[@]}"; do
+    item="$(normalize_path "$item")"
+    if [ -n "$item" ]; then
+      printf '%s\n' "$item"
+    fi
+  done
 }
 
 if [ ! -f "$SCRIPT_PATH" ]; then
@@ -124,11 +156,17 @@ while true; do
   echo
   echo "请输入文件或目录路径（可拖入，直接回车结束）："
   read -r TARGET_PATH_RAW
-  TARGET_PATH_RAW="$(normalize_path "$TARGET_PATH_RAW")"
-  if [ -z "$TARGET_PATH_RAW" ]; then
+  if [ -z "${TARGET_PATH_RAW//[[:space:]]/}" ]; then
     break
   fi
-  process_one "$TARGET_PATH_RAW"
+  INPUT_PATHS=("${(@f)$(parse_input_paths "$TARGET_PATH_RAW")}")
+  if [ "${#INPUT_PATHS[@]}" -eq 0 ]; then
+    echo "[WARN] 未识别到有效路径，请重试。"
+    continue
+  fi
+  for RAW_PATH in "${INPUT_PATHS[@]}"; do
+    process_one "$RAW_PATH"
+  done
   echo
   echo "当前累计：成功 $SUCCESS_COUNT 个，失败 $FAIL_COUNT 个。"
 done
