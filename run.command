@@ -145,6 +145,19 @@ echo "convert_mixed_to_md"
 echo
 echo "支持格式：doc / docx / pdf / epub / wps / wpt / hwp"
 echo "可连续处理：每次转完可继续输入路径，直接回车结束。"
+echo
+if [ -z "$MINERU_TOKEN" ]; then
+  echo "[提示] 如果你接下来要转换 PDF（尤其扫描版 PDF），建议先输入 MINERU_TOKEN。"
+  echo "      不需要可直接回车跳过。"
+  read -r MINERU_TOKEN_INPUT
+  MINERU_TOKEN_INPUT="$(normalize_path "$MINERU_TOKEN_INPUT")"
+  if [ -n "$MINERU_TOKEN_INPUT" ]; then
+    export MINERU_TOKEN="$MINERU_TOKEN_INPUT"
+    echo "[OK] 已设置本次会话 MINERU_TOKEN。"
+  else
+    echo "[INFO] 本次未设置 MINERU_TOKEN，扫描版 PDF 可能失败。"
+  fi
+fi
 
 if [ "$#" -gt 0 ]; then
   for RAW_PATH in "$@"; do

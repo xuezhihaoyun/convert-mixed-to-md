@@ -48,6 +48,7 @@ set "WARNED_TOKEN=0"
 echo convert_mixed_to_md (Windows)
 echo Supported: doc / docx / pdf / epub / wps / wpt / hwp
 echo You can drag file/folder to this .bat, or input path manually.
+if not defined MINERU_TOKEN call :prompt_mineru_token
 
 if not "%~1"=="" (
   :args_loop
@@ -70,6 +71,18 @@ echo.
 echo Finished: success !SUCCESS_COUNT!, fail !FAIL_COUNT!
 pause
 if !FAIL_COUNT! gtr 0 exit /b 1
+exit /b 0
+
+:prompt_mineru_token
+echo.
+echo [TIP] If you are going to convert PDF ^(especially scanned PDF^), set MINERU_TOKEN first.
+set /p MINERU_TOKEN_INPUT=Input MINERU_TOKEN now (Enter to skip): 
+if not "%MINERU_TOKEN_INPUT%"=="" (
+  set "MINERU_TOKEN=%MINERU_TOKEN_INPUT%"
+  echo [OK] MINERU_TOKEN set for this session.
+) else (
+  echo [INFO] MINERU_TOKEN not set. Scanned PDF OCR may fail.
+)
 exit /b 0
 
 :dispatch_input

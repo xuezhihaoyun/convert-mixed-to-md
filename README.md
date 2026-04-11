@@ -57,6 +57,25 @@ flowchart TD
     F --> I["写回 .md（已存在则跳过）"]
 ```
 
+## Pipeline 架构（已重构）
+
+当前实现采用 Pipeline 模式，主入口只做参数解析与调度：
+
+- `convert_mixed_to_md.py`
+  - 负责 CLI 参数与 pipeline 顺序调用
+- `mix2md_pipeline/steps/discover.py`
+  - 输入发现（文件扫描、输出目录基线）
+- `mix2md_pipeline/steps/preflight.py`
+  - 依赖与环境提示
+- `mix2md_pipeline/steps/convert.py`
+  - 核心逐文件转换（成功/跳过/失败）
+- `mix2md_pipeline/steps/report.py`
+  - 结果汇总与退出码
+- `legacy_engine.py`
+  - 保留原成熟转换能力（格式解析、OCR、清洗逻辑）
+
+这样做的好处是：流程层与能力层解耦，后续加新步骤（比如质量检查、重试策略）会更稳定。
+
 ## 支持格式
 
 | 格式 | 处理方式 | 备注 |
@@ -118,6 +137,8 @@ choco install pandoc poppler -y
 
 - macOS：`run.command`
 - Windows：`run_windows.bat`
+
+说明：启动脚本会先提示是否输入 `MINERU_TOKEN`（可回车跳过），方便你先配置扫描版 PDF 的 OCR。
 
 Windows 版支持：
 
