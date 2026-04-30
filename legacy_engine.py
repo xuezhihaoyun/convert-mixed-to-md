@@ -644,9 +644,23 @@ def looks_like_archive_metadata_dump(text: str) -> bool:
     return hit_count >= 2
 
 
+def looks_like_page_number_only_text(text: str, page_count: int) -> bool:
+    lines = [line.strip() for line in text.replace("\f", "\n").splitlines() if line.strip()]
+    if not lines:
+        return True
+    page_marker_re = re.compile(r"^(?:[-–—]?\s*)?\d{1,4}(?:\s*/\s*\d{1,4})?(?:\s*[-–—]?)?$")
+    marker_count = sum(1 for line in lines if page_marker_re.match(line))
+    compact = re.sub(r"\s+", "", text.replace("\f", ""))
+    if marker_count == len(lines) and len(compact) <= max(page_count * 6, 20):
+        return True
+    return page_count >= 3 and marker_count >= max(page_count - 1, 1) and len(compact) <= page_count * 12
+
+
 def is_suspicious_pdf_text(text: str, page_count: int) -> bool:
     stripped = text.strip()
     if not stripped:
+        return True
+    if looks_like_page_number_only_text(stripped, page_count):
         return True
 
     compact = re.sub(r"\s+", "", stripped.replace("\f", ""))
