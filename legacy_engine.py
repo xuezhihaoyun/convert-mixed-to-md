@@ -1065,6 +1065,14 @@ def convert_pdf_to_md(source_path: Path, output_path: Path) -> None:
             errors.append(f"{extractor.__name__}: {exc}")
             continue
         if text.strip():
+            effective_page_count = page_count or 1
+            if is_suspicious_pdf_text(text, effective_page_count):
+                print(
+                    f"[INFO] {extractor.__name__} 提取到的文本仍疑似页码/低密度内容，继续 OCR 流程: {source_path}",
+                    file=sys.stderr,
+                )
+                text = ""
+                continue
             break
 
     if not text.strip():
