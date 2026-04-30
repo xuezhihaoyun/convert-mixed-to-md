@@ -14,9 +14,12 @@ def preflight_checks_step(state: PipelineState) -> PipelineState:
         print("[WARN] 未检测到 pandoc，doc/docx/epub/wps/wpt 可能转换失败。", file=sys.stderr)
     if ".pdf" in suffixes and not legacy_engine.which_cached("pdftotext"):
         print("[INFO] 未检测到 pdftotext，将使用 Python 提取器处理 PDF。", file=sys.stderr)
+    if ".pdf" in suffixes and not legacy_engine.which_cached("pdftoppm"):
+        print("[INFO] 未检测到 pdftoppm；MinerU 失败后将无法把 PDF 页面渲染给千问 VL。", file=sys.stderr)
+    if suffixes.intersection(legacy_engine.IMAGE_EXTENSIONS) and not legacy_engine.has_qwen_config():
+        print("[INFO] 检测到图片文件，但未配置 DASHSCOPE_API_KEY，图片 OCR 可能失败。", file=sys.stderr)
     if os.name == "nt" and suffixes.intersection({".doc", ".wps", ".wpt"}) and not legacy_engine.which_cached("textutil"):
         print("[INFO] Windows 不支持 textutil；旧版文档建议先转为 .docx。", file=sys.stderr)
     if ".hwp" in suffixes and not legacy_engine.get_hwp5txt_runner():
         print("[INFO] 检测到 .hwp：首次转换会自动安装 pyhwp，耗时会稍长。", file=sys.stderr)
     return state
-

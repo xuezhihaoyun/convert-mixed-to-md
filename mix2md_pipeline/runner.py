@@ -12,7 +12,7 @@ from mix2md_pipeline.steps.report import report_step
 def run_pipeline(state: PipelineState) -> PipelineState:
     state = discover_files_step(state)
     if not state.files:
-        print("没有找到可转换的文件（支持 .doc / .docx / .epub / .pdf / .wps / .wpt / .hwp）。", file=sys.stderr)
+        print("没有找到可转换的文件（支持 .doc / .docx / .epub / .pdf / .wps / .wpt / .hwp / 常见图片）。", file=sys.stderr)
         state.exit_code = 1
         return state
 

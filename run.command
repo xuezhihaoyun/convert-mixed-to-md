@@ -92,8 +92,8 @@ ensure_runtime() {
     echo "$req_hash" > "$hash_file"
   fi
 
-  if ! "$VENV_PYTHON" -c "import requests" >/dev/null 2>&1; then
-    echo "[FAIL] requests 仍不可用，依赖环境异常。"
+  if ! "$VENV_PYTHON" -c "import requests, anthropic" >/dev/null 2>&1; then
+    echo "[FAIL] requests/anthropic 仍不可用，依赖环境异常。"
     return 1
   fi
 
@@ -143,7 +143,7 @@ process_one() {
 
 echo "convert_mixed_to_md"
 echo
-echo "支持格式：doc / docx / pdf / epub / wps / wpt / hwp"
+echo "支持格式：doc / docx / pdf / epub / wps / wpt / hwp / jpg / png / webp"
 echo "可连续处理：每次转完可继续输入路径，直接回车结束。"
 echo
 if [ -z "$MINERU_TOKEN" ]; then

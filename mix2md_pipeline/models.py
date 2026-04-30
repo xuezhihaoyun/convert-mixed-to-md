@@ -8,6 +8,9 @@ from pathlib import Path
 class PipelineConfig:
     input_path: Path
     explicit_output_dir: str | None = None
+    polish_profile: str = "none"
+    write_report: bool = False
+    artifact_level: str = "minimal"
 
 
 @dataclass

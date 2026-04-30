@@ -46,7 +46,7 @@ set /a FAIL_COUNT=0
 set "WARNED_TOKEN=0"
 
 echo convert_mixed_to_md (Windows)
-echo Supported: doc / docx / pdf / epub / wps / wpt / hwp
+echo Supported: doc / docx / pdf / epub / wps / wpt / hwp / jpg / png / webp
 echo You can drag file/folder to this .bat, or input path manually.
 if not defined MINERU_TOKEN call :prompt_mineru_token
 
@@ -129,7 +129,7 @@ if not exist "%VENV_PYTHON%" (
   )
 )
 
-"%VENV_PYTHON%" -c "import requests, pdfplumber, pypdf" >nul 2>&1
+"%VENV_PYTHON%" -c "import requests, pdfplumber, pypdf, anthropic" >nul 2>&1
 if errorlevel 1 (
   echo [INIT] Installing dependencies...
   "%VENV_PYTHON%" -m pip install --upgrade pip >nul 2>&1
@@ -142,7 +142,7 @@ if errorlevel 1 (
   )
 )
 
-"%VENV_PYTHON%" -c "import requests, pdfplumber, pypdf" >nul 2>&1
+"%VENV_PYTHON%" -c "import requests, pdfplumber, pypdf, anthropic" >nul 2>&1
 if errorlevel 1 (
   echo [FAIL] Python dependencies are still unavailable.
   exit /b 1

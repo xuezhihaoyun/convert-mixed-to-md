@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 
 from mix2md_pipeline.models import FileRecord, PipelineState
+from mix2md_pipeline.polish import apply_polish
 
 import legacy_engine
 
@@ -22,11 +23,20 @@ def convert_files_step(state: PipelineState) -> PipelineState:
                 state.skipped += 1
                 print(f"[SKIP] {source_path}")
             else:
+                extra_outputs = []
+                for output in outputs:
+                    polish_result = apply_polish(
+                        output,
+                        profile=state.config.polish_profile,
+                        write_report=state.config.write_report,
+                        artifact_level=state.config.artifact_level,
+                    )
+                    extra_outputs.extend(polish_result.extra_paths)
                 record.status = "ok"
-                record.output_paths = outputs
+                record.output_paths = outputs + extra_outputs
                 state.succeeded += 1
                 print(f"[OK] {source_path}")
-                for output in outputs:
+                for output in record.output_paths:
                     print(f"     -> {output}")
         except Exception as exc:  # noqa: BLE001
             message = str(exc)
@@ -36,4 +46,3 @@ def convert_files_step(state: PipelineState) -> PipelineState:
             print(f"[FAIL] {source_path}: {message}", file=sys.stderr)
         state.records.append(record)
     return state
-

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import html
+import mimetypes
 import os
 import re
 import shutil
@@ -17,7 +19,8 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 
-SUPPORTED_EXTENSIONS = {".doc", ".docx", ".epub", ".pdf", ".wps", ".wpt", ".hwp"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
+SUPPORTED_EXTENSIONS = {".doc", ".docx", ".epub", ".pdf", ".wps", ".wpt", ".hwp"} | IMAGE_EXTENSIONS
 HTML_START = b"<html><body>"
 HTML_END = b"</html>"
 HTML_ANY_START = b"<html"
@@ -32,6 +35,11 @@ ALT_ATTR_RE = re.compile(r"(?i)\balt=['\"]([^'\"]*)['\"]")
 STRIP_TAG_RE = re.compile(r"(?is)<[^>]+>")
 MINERU_API_BASE = "https://mineru.net/api/v4"
 DEFAULT_MINERU_TOKEN = ""
+QWEN_CONFIG_PATH = Path("~/cc/config/ocr.yaml").expanduser()
+QWEN_ENV_PATH = Path("~/cc/config/api_keys.env").expanduser()
+DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/apps/anthropic"
+DEFAULT_QWEN_MODEL = "qwen-vl-plus"
+QWEN_MAX_TOKENS = 4096
 OCR_CHUNK_PAGE_THRESHOLD = 40
 OCR_CHUNK_SIZE = 25
 DIRECT_OCR_FILESIZE_THRESHOLD = 50 * 1024 * 1024
@@ -63,17 +71,109 @@ def can_import_requests() -> bool:
         return False
 
 
+def can_import_anthropic() -> bool:
+    try:
+        import anthropic  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def load_env_file_values(path: Path = QWEN_ENV_PATH) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def load_qwen_yaml_values(path: Path = QWEN_CONFIG_PATH) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    in_qwen = False
+    qwen_indent = 0
+    for raw_line in lines:
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        line = raw_line.strip()
+
+        if re.match(r"qwen\s*:\s*(#.*)?$", line):
+            in_qwen = True
+            qwen_indent = indent
+            continue
+        if in_qwen and indent <= qwen_indent:
+            in_qwen = False
+
+        if not in_qwen or ":" not in line:
+            continue
+
+        key, value = line.split(":", 1)
+        value = value.split("#", 1)[0].strip().strip("'\"")
+        if value:
+            values[key.strip()] = value
+    return values
+
+
+def qwen_config() -> dict[str, str | int | float]:
+    env_file = load_env_file_values()
+    yaml_values = load_qwen_yaml_values()
+
+    api_key = os.environ.get("DASHSCOPE_API_KEY") or env_file.get("DASHSCOPE_API_KEY") or yaml_values.get("api_key", "")
+    base_url = (
+        os.environ.get("DASHSCOPE_BASE_URL")
+        or env_file.get("DASHSCOPE_BASE_URL")
+        or yaml_values.get("base_url")
+        or DEFAULT_QWEN_BASE_URL
+    )
+    model = os.environ.get("QWEN_OCR_MODEL") or yaml_values.get("model") or DEFAULT_QWEN_MODEL
+
+    try:
+        rpm_limit = int(os.environ.get("QWEN_OCR_RPM_LIMIT") or yaml_values.get("rpm_limit") or 60)
+    except ValueError:
+        rpm_limit = 60
+    try:
+        cost_per_image = float(os.environ.get("QWEN_OCR_COST_PER_IMAGE") or yaml_values.get("cost_per_image") or 0)
+    except ValueError:
+        cost_per_image = 0.0
+
+    return {
+        "api_key": api_key,
+        "base_url": base_url,
+        "model": model,
+        "rpm_limit": max(rpm_limit, 1),
+        "cost_per_image": max(cost_per_image, 0.0),
+    }
+
+
+def has_qwen_config() -> bool:
+    return bool(qwen_config().get("api_key"))
+
+
 def print_environment_check() -> None:
     lines = [
         ("python", sys.executable),
         ("pandoc", which_cached("pandoc") or "MISSING"),
         ("pdftotext", which_cached("pdftotext") or "MISSING"),
+        ("pdftoppm", which_cached("pdftoppm") or "MISSING"),
         ("textutil", which_cached("textutil") or "MISSING"),
         ("antiword", which_cached("antiword") or "MISSING"),
         ("catdoc", which_cached("catdoc") or "MISSING"),
         ("hwp5txt", which_cached("hwp5txt") or "MISSING"),
         ("requests", "OK" if can_import_requests() else "MISSING"),
+        ("anthropic", "OK" if can_import_anthropic() else "MISSING"),
         ("MINERU_TOKEN", "SET" if bool(os.environ.get("MINERU_TOKEN", DEFAULT_MINERU_TOKEN)) else "EMPTY"),
+        ("DASHSCOPE_API_KEY", "SET" if has_qwen_config() else "EMPTY"),
     ]
     print("Environment check:")
     for key, value in lines:
@@ -672,6 +772,158 @@ def convert_with_mineru(source_path: Path, output_path: Path) -> bool:
     return True
 
 
+def get_anthropic_client(config: dict[str, str | int | float]):
+    try:
+        import anthropic  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("未安装 anthropic，无法调用千问 VL。可执行: python -m pip install anthropic") from exc
+
+    api_key = str(config.get("api_key") or "")
+    if not api_key:
+        raise ValueError("未配置 DASHSCOPE_API_KEY，无法调用千问 VL")
+    return anthropic.Anthropic(
+        base_url=str(config.get("base_url") or DEFAULT_QWEN_BASE_URL),
+        api_key=api_key,
+    )
+
+
+def build_qwen_ocr_prompt(title: str, page_label: str | None = None) -> str:
+    page_hint = f"当前图片来自《{title}》的{page_label}。" if page_label else f"当前图片来自《{title}》。"
+    return f"""{page_hint}
+请把图片中的可见文字、标题、段落、表格、列表、脚注等内容转写为 Markdown。
+要求：
+1. 只输出 Markdown 正文，不要解释识别过程。
+2. 尽量保持原文顺序、层级、编号、标点和换行。
+3. 表格请转换为 Markdown 表格；无法可靠转表时用接近原排版的文本保留。
+4. 不要编造图片中不存在的内容；无法识别的位置可写 [无法识别]。
+5. 如果页面没有可读正文，只输出空字符串。"""
+
+
+def image_to_base64(path: Path) -> str:
+    return base64.b64encode(path.read_bytes()).decode("utf-8")
+
+
+def image_media_type(path: Path) -> str:
+    guessed, _ = mimetypes.guess_type(str(path))
+    if guessed and guessed.startswith("image/"):
+        return guessed
+    if path.suffix.lower() in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    return "image/png"
+
+
+def qwen_response_text(response: object) -> str:
+    content = getattr(response, "content", None)
+    if not content:
+        return ""
+    parts: list[str] = []
+    for item in content:
+        text = getattr(item, "text", None)
+        if text:
+            parts.append(text)
+        elif isinstance(item, dict) and item.get("text"):
+            parts.append(str(item["text"]))
+    return "\n\n".join(parts).strip()
+
+
+def extract_markdown_from_image_with_qwen(
+    image_path: Path,
+    *,
+    title: str,
+    page_label: str | None = None,
+) -> str:
+    config = qwen_config()
+    client = get_anthropic_client(config)
+    response = client.messages.create(
+        model=str(config.get("model") or DEFAULT_QWEN_MODEL),
+        max_tokens=QWEN_MAX_TOKENS,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image_media_type(image_path),
+                            "data": image_to_base64(image_path),
+                        },
+                    },
+                    {"type": "text", "text": build_qwen_ocr_prompt(title, page_label)},
+                ],
+            }
+        ],
+    )
+    return qwen_response_text(response)
+
+
+def render_pdf_pages_for_qwen(source_path: Path, temp_dir: Path) -> list[Path]:
+    pdftoppm = which_cached("pdftoppm")
+    if not pdftoppm:
+        raise ValueError("未检测到 pdftoppm，无法将 PDF 页面渲染为图片供千问 VL 识别")
+
+    prefix = temp_dir / "page"
+    cmd = [pdftoppm, "-r", "180", "-jpeg", str(source_path), str(prefix)]
+    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def page_number(path: Path) -> int:
+        match = re.search(r"-(\d+)\.jpe?g$", path.name, re.IGNORECASE)
+        return int(match.group(1)) if match else 0
+
+    pages = sorted(temp_dir.glob("page-*.jpg"), key=page_number)
+    if not pages:
+        raise ValueError("PDF 渲染后没有生成页面图片")
+    return pages
+
+
+def extract_markdown_with_qwen(source_path: Path) -> str:
+    if source_path.suffix.lower() in IMAGE_EXTENSIONS:
+        return extract_markdown_from_image_with_qwen(source_path, title=source_path.stem)
+
+    if source_path.suffix.lower() != ".pdf":
+        raise ValueError(f"千问 VL 暂不支持该格式: {source_path.suffix}")
+
+    config = qwen_config()
+    rpm_limit = int(config.get("rpm_limit") or 60)
+    delay = 60.0 / max(rpm_limit, 1)
+
+    with tempfile.TemporaryDirectory(prefix="qwen_pdf_pages_") as temp_dir:
+        page_images = render_pdf_pages_for_qwen(source_path, Path(temp_dir))
+        cost = float(config.get("cost_per_image") or 0.0) * len(page_images)
+        if cost:
+            print(
+                f"[INFO] 千问 VL 将识别 {len(page_images)} 页，预估成本约 {cost:.3f} 元",
+                file=sys.stderr,
+            )
+
+        parts: list[str] = []
+        for index, image_path in enumerate(page_images, start=1):
+            print(f"[INFO] 千问 VL OCR 第 {index}/{len(page_images)} 页", file=sys.stderr)
+            markdown = extract_markdown_from_image_with_qwen(
+                image_path,
+                title=source_path.stem,
+                page_label=f"第 {index} 页",
+            ).strip()
+            if markdown:
+                parts.append(f"## Page {index}\n\n{markdown}")
+            if index < len(page_images):
+                time.sleep(delay)
+
+    return "\n\n".join(parts)
+
+
+def convert_with_qwen(source_path: Path, output_path: Path) -> bool:
+    try:
+        markdown = extract_markdown_with_qwen(source_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] 千问 VL OCR 失败: {source_path} ({exc})", file=sys.stderr)
+        return False
+    if not markdown.strip():
+        return False
+    output_path.write_text(normalize_markdown(markdown, title=source_path.stem), encoding="utf-8")
+    return True
+
+
 def get_pdf_page_count(pdf_path: Path) -> int:
     from pypdf import PdfReader
 
@@ -782,6 +1034,8 @@ def convert_pdf_to_md(source_path: Path, output_path: Path) -> None:
             errors.append(f"{convert_pdf_with_chunked_mineru.__name__}: {exc}")
         if convert_with_mineru(source_path, output_path):
             return
+        if convert_with_qwen(source_path, output_path):
+            return
         detail = "; ".join(errors) if errors else "未提取到文本"
         raise ValueError(f"PDF 未提取到可用文本，且 OCR 失败。{detail}")
 
@@ -807,6 +1061,8 @@ def convert_pdf_to_md(source_path: Path, output_path: Path) -> None:
             errors.append(f"{convert_pdf_with_chunked_mineru.__name__}: {exc}")
         if convert_with_mineru(source_path, output_path):
             return
+        if convert_with_qwen(source_path, output_path):
+            return
         detail = "; ".join(errors) if errors else "未提取到文本"
         raise ValueError(f"PDF 未提取到可用文本，可能是扫描件，需要 OCR。{detail}")
 
@@ -828,6 +1084,9 @@ def convert_file(source_path: Path, output_dir: Path) -> list[Path]:
         convert_docx_or_epub_to_md(source_path, output_path)
     elif suffix == ".pdf":
         convert_pdf_to_md(source_path, output_path)
+    elif suffix in IMAGE_EXTENSIONS:
+        if not convert_with_qwen(source_path, output_path):
+            raise ValueError("图片 OCR 失败；请检查 DASHSCOPE_API_KEY、千问 VL 配置和 anthropic 依赖")
     else:
         raise ValueError(f"暂不支持的格式: {suffix}")
 
@@ -845,7 +1104,7 @@ def convert_file(source_path: Path, output_dir: Path) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="批量将 .doc / .docx / .epub / .pdf / .wps / .wpt / .hwp 转为 Markdown，并跳过已存在的同名 .md。"
+        description="批量将 .doc / .docx / .epub / .pdf / .wps / .wpt / .hwp / 常见图片 转为 Markdown，并跳过已存在的同名 .md。"
     )
     parser.add_argument("input", nargs="?", help="单个文件或目录")
     parser.add_argument("-o", "--output-dir", help="输出目录，默认写回输入文件所在目录")
@@ -868,7 +1127,7 @@ def main() -> int:
     files = discover_files(input_path)
 
     if not files:
-        print("没有找到可转换的文件（支持 .doc / .docx / .epub / .pdf / .wps / .wpt / .hwp）。", file=sys.stderr)
+        print("没有找到可转换的文件（支持 .doc / .docx / .epub / .pdf / .wps / .wpt / .hwp / 常见图片）。", file=sys.stderr)
         return 1
 
     suffixes = {path.suffix.lower() for path in files}
